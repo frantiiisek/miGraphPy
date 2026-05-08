@@ -26,8 +26,7 @@ Redistribution and use in source and binary forms, with or without modification,
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-
-
+# pylint: disable=invalid-name, line-too-long
 
 
 from __future__ import division, absolute_import, print_function
@@ -35,18 +34,19 @@ from __future__ import division, absolute_import, print_function
 import sys
 from threading import Thread, Lock
 from multiprocessing import cpu_count
-import Queue
+import queue
 from math import ceil
 from random import sample, seed
 
 
 import numpy as np
 from sklearn import preprocessing
-from scipy.spatial.distance import pdist, cdist, squareform, sqeuclidean
+from scipy.spatial.distance import pdist  # , cdist, squareform, sqeuclidean
+
+from tqdm.notebook import tqdm
+from time import sleep
 
 lock = Lock()
-
-
 
 
 def calcDistMatrix(bag, method='sqeuclidean', gamma=1.):
@@ -62,22 +62,23 @@ def calcDistMatrix(bag, method='sqeuclidean', gamma=1.):
     :return distMat: ndarray [n,n].  Distance matrix
     '''
 
-    n = bag.shape[0] # the number of instances
+    n = bag.shape[0]  # the number of instances
 
-    if (method == 'sqeuclidean'):
+    if method == 'sqeuclidean':
         # squared euclidean norm
         bag_i_norm = np.sum(bag**2, axis=1)
-        distMat = np.tile(bag_i_norm, [n,1]) + np.tile(bag_i_norm, [n,1]).transpose() -2*np.dot(bag, bag.transpose())
-    elif (method == 'gaussian'):
+        distMat = np.tile(bag_i_norm, [
+                          n, 1]) + np.tile(bag_i_norm, [n, 1]).transpose() - 2*np.dot(bag, bag.transpose())
+    elif method == 'gaussian':
         bag_i_norm = np.sum(bag**2, axis=1)
-        distMat = np.tile(bag_i_norm, [n,1]) + np.tile(bag_i_norm, [n,1]).transpose() -2*np.dot(bag, bag.transpose())
+        distMat = np.tile(bag_i_norm, [
+                          n, 1]) + np.tile(bag_i_norm, [n, 1]).transpose() - 2*np.dot(bag, bag.transpose())
         distMat = 1 - np.exp(-gamma * distMat)
-
-    #distMat = squareform(pdist(bag, 'sqeuclidean'))
+    else:
+        raise NotImplementedError("Other metrics aren't implemented")
+    # distMat = squareform(pdist(bag, 'sqeuclidean'))
 
     return distMat
-
-
 
 
 def calcRbfKernel(bag1, bag2, gamma):
@@ -91,20 +92,19 @@ def calcRbfKernel(bag1, bag2, gamma):
     return: kMat: ndarray [n,m]. The between instances kernel function.
     '''
 
-    n = bag1.shape[0] # the number of instances in bag 1
-    m = bag2.shape[0] # the number of instances in bag 2
+    n = bag1.shape[0]  # the number of instances in bag 1
+    m = bag2.shape[0]  # the number of instances in bag 2
 
     # suared euclidean norm
     bag1_i_norm = np.sum(bag1**2, axis=1)
     bag2_i_norm = np.sum(bag2**2, axis=1)
-    distMat = np.array(np.tile(bag1_i_norm, [m,1]).transpose() + np.tile(bag2_i_norm, [n,1]) - 2*np.dot(bag1, bag2.transpose()), dtype=np.float64)
+    distMat = np.array(np.tile(bag1_i_norm, [m, 1]).transpose(
+    ) + np.tile(bag2_i_norm, [n, 1]) - 2*np.dot(bag1, bag2.transpose()), dtype=np.float64)
 
     # radial basis function
     kMat = np.exp(-gamma * distMat)
 
     return kMat
-
-
 
 
 def calcKernelEntry(bag1, bag2, weightMatrix1, weightMatrix2, gamma):
@@ -120,25 +120,27 @@ def calcKernelEntry(bag1, bag2, weightMatrix1, weightMatrix2, gamma):
     return: kMat: ndarray [n,m]. The between instances kernel function.
     '''
 
-    n = bag1.shape[0] # the number of instances in bag 1
-    m = bag2.shape[0] # the number of instances in bag 2
+    n = bag1.shape[0]  # the number of instances in bag 1
+    m = bag2.shape[0]  # the number of instances in bag 2
 
-    activeEdgesCount1 = np.sum(weightMatrix1, axis=1) # number of edges per instance
-    activeEdgesCount2 = np.sum(weightMatrix2, axis=1) # number of edges per instance
+    # number of edges per instance
+    activeEdgesCount1 = np.sum(weightMatrix1, axis=1)
+    # number of edges per instance
+    activeEdgesCount2 = np.sum(weightMatrix2, axis=1)
 
-
-    activeEdgesCoef1 = 1. / (activeEdgesCount1 + 1e-3)    # offset to avoid division by zero if e.g. just one instance in a bag
-    activeEdgesCoef2 = 1. / (activeEdgesCount2 + 1e-3) 
+    # offset to avoid division by zero if e.g. just one instance in a bag
+    activeEdgesCoef1 = 1. / (activeEdgesCount1 + 1e-3)
+    activeEdgesCoef2 = 1. / (activeEdgesCount2 + 1e-3)
 
     k = calcRbfKernel(bag1, bag2, gamma=gamma)
 
-    k = np.tile(activeEdgesCoef1, [m,1]).transpose() * np.tile(activeEdgesCoef2, [n,1]) * k
+    k = np.tile(activeEdgesCoef1, [m, 1]).transpose(
+    ) * np.tile(activeEdgesCoef2, [n, 1]) * k
 
-    k = np.sum(k) / np.sqrt(np.sum(activeEdgesCoef1)) / np.sqrt(np.sum(activeEdgesCoef2))
+    k = np.sum(k) / np.sqrt(np.sum(activeEdgesCoef1)) / \
+        np.sqrt(np.sum(activeEdgesCoef2))
 
     return k
-
-
 
 
 def calcKernelEntry_threading(kernel, q):
@@ -154,29 +156,33 @@ def calcKernelEntry_threading(kernel, q):
     '''
 
     while True:
-        i, j, bag1, bag2, weightMatrix1, weightMatrix2, gamma = q.get() # extract values from queue
+        # extract values from queue
+        i, j, bag1, bag2, weightMatrix1, weightMatrix2, gamma = q.get()
 
-        n = bag1.shape[0] # the number of instances in bag 1
-        m = bag2.shape[0] # the number of instances in bag 2
+        n = bag1.shape[0]  # the number of instances in bag 1
+        m = bag2.shape[0]  # the number of instances in bag 2
 
-        activeEdgesCount1 = np.sum(weightMatrix1, axis=1) # number of edges per instance
-        activeEdgesCount2 = np.sum(weightMatrix2, axis=1) # number of edges per instance
+        # number of edges per instance
+        activeEdgesCount1 = np.sum(weightMatrix1, axis=1)
+        # number of edges per instance
+        activeEdgesCount2 = np.sum(weightMatrix2, axis=1)
 
-        activeEdgesCoef1 = 1. / (activeEdgesCount1 + 1e-3)      # offset to avoid division by zero if e.g. just one instance in a bag
+        # offset to avoid division by zero if e.g. just one instance in a bag
+        activeEdgesCoef1 = 1. / (activeEdgesCount1 + 1e-3)
         activeEdgesCoef2 = 1. / (activeEdgesCount2 + 1e-3)
 
         k = calcRbfKernel(bag1, bag2, gamma=gamma)
 
-        k = np.tile(activeEdgesCoef1, [m,1]).transpose() * np.tile(activeEdgesCoef2, [n,1]) * k
+        k = np.tile(activeEdgesCoef1, [m, 1]).transpose(
+        ) * np.tile(activeEdgesCoef2, [n, 1]) * k
 
-        k = np.sum(k) / np.sqrt(np.sum(activeEdgesCoef1)) / np.sqrt(np.sum(activeEdgesCoef2))
-					
+        k = np.sum(k) / np.sqrt(np.sum(activeEdgesCoef1)) / \
+            np.sqrt(np.sum(activeEdgesCoef2))
+
         with lock:
-            kernel[i,j] = k
+            kernel[i, j] = k
 
         q.task_done()
-
-
 
 
 def buildKernel(bags1, bags2, gamma=None, delta=None, delta_method='global', dist_method='gaussian', progressBar=True):
@@ -199,7 +205,7 @@ def buildKernel(bags1, bags2, gamma=None, delta=None, delta_method='global', dis
     N = len(bags1)
     M = len(bags2)
 
-    kernel = np.zeros((N,M))
+    kernel = np.zeros((N, M))
 
     distMatrices1 = []
     distMatrices2 = []
@@ -207,61 +213,55 @@ def buildKernel(bags1, bags2, gamma=None, delta=None, delta_method='global', dis
     dist_num = 0
 
     for i in range(N):
-        distMatrices1.append(calcDistMatrix(bags1[i], method=dist_method, gamma=gamma))
+        distMatrices1.append(calcDistMatrix(
+            bags1[i], method=dist_method, gamma=gamma))
         dist_sum += np.sum(distMatrices1[i])
         dist_num += distMatrices1[i].shape[0] * distMatrices1[i].shape[1]
 
     for i in range(M):
-        distMatrices2.append(calcDistMatrix(bags2[i], method=dist_method, gamma=gamma))
+        distMatrices2.append(calcDistMatrix(
+            bags2[i], method=dist_method, gamma=gamma))
         dist_sum += np.sum(distMatrices2[i])
         dist_num += distMatrices2[i].shape[0] * distMatrices2[i].shape[1]
 
-    if delta is None and delta_method =='global':
+    if delta is None and delta_method == 'global':
         delta = dist_sum / dist_num
 
-
-    diagNorm1 = np.zeros(N) # Contains normalization for each diagonal element
-    weightMatrices1 = [] # List of weight matrices
-    for i in range(N):
-        if delta is None and delta_method =='local':
+    diagNorm1 = np.zeros(N)  # Contains normalization for each diagonal element
+    weightMatrices1 = []  # List of weight matrices
+    for i in tqdm(range(N), desc="weightMatrices1"):
+        if delta is None and delta_method == 'local':
             delta = np.mean(distMatrices1[i])
             weightMatrices1.append((distMatrices1[i] < delta).astype(np.uint8))
             delta = None
         else:
             weightMatrices1.append((distMatrices1[i] < delta).astype(np.uint8))
-        diagNorm1[i] = calcKernelEntry(bags1[i], bags1[i], weightMatrices1[i], weightMatrices1[i], gamma=gamma)
+        diagNorm1[i] = calcKernelEntry(
+            bags1[i], bags1[i], weightMatrices1[i], weightMatrices1[i], gamma=gamma)
 
-
-    diagNorm2 = np.zeros(M) # Contains normalization for each diagonal element
-    weightMatrices2 = [] # List of weight matrices
-    for i in range(M):
-        if delta is None and delta_method =='local':
+    diagNorm2 = np.zeros(M)  # Contains normalization for each diagonal element
+    weightMatrices2 = []  # List of weight matrices
+    for i in tqdm(range(M), desc="weightMatrices2"):
+        if delta is None and delta_method == 'local':
             delta = np.mean(distMatrices2[i])
             weightMatrices2.append((distMatrices2[i] < delta).astype(np.uint8))
             delta = None
         else:
             weightMatrices2.append((distMatrices2[i] < delta).astype(np.uint8))
-        diagNorm2[i] = calcKernelEntry(bags2[i], bags2[i], weightMatrices2[i], weightMatrices2[i], gamma=gamma)
+        diagNorm2[i] = calcKernelEntry(
+            bags2[i], bags2[i], weightMatrices2[i], weightMatrices2[i], gamma=gamma)
 
     T = N*M
     k = 0
-    for i in range(N):
+    for i in (tqdm(range(N), desc="kernelEntry") if progressBar else range(N)):
         for j in range(M):
 
-            kernelEntry = calcKernelEntry(bags1[i], bags2[j], weightMatrices1[i], weightMatrices2[j], gamma=gamma)
+            kernelEntry = calcKernelEntry(
+                bags1[i], bags2[j], weightMatrices1[i], weightMatrices2[j], gamma=gamma)
 
-            kernel[i,j] = kernelEntry / np.sqrt(diagNorm1[i] * diagNorm2[j])
-
-            if ((k%(ceil(T/100)) == 0 or k == T-1) and progressBar == True):
-                sys.stdout.write('\r')
-                sys.stdout.write("[%-50s] %d%%" % ('='*int(float(k+1)/T*50), int(float(k+1)/T*100)))
-                sys.stdout.flush()
-            k += 1
-    if (progressBar == True):
-        sys.stdout.write('\n')
+            kernel[i, j] = kernelEntry / np.sqrt(diagNorm1[i] * diagNorm2[j])
 
     return kernel
-
 
 
 def buildKernel_threading(bags1, bags2, gamma=None, delta=None, delta_method='global', dist_method='gaussian', progressBar=True, n_threads=-1):
@@ -285,89 +285,97 @@ def buildKernel_threading(bags1, bags2, gamma=None, delta=None, delta_method='gl
     N = len(bags1)
     M = len(bags2)
 
-    kernel = np.zeros((N,M))
+    kernel = np.zeros((N, M))
 
     distMatrices1 = []
     distMatrices2 = []
     dist_sum = 0
     dist_num = 0
 
-    for i in range(N):
-        distMatrices1.append(calcDistMatrix(bags1[i], method=dist_method, gamma=gamma))
+    for i in tqdm(range(N), desc="distMatrices1"):
+        distMatrices1.append(calcDistMatrix(
+            bags1[i], method=dist_method, gamma=gamma))
         dist_sum += np.sum(distMatrices1[i])
         dist_num += distMatrices1[i].shape[0] * distMatrices1[i].shape[1]
 
-    for i in range(M):
-        distMatrices2.append(calcDistMatrix(bags2[i], method=dist_method, gamma=gamma))
+    for i in tqdm(range(M), desc="distMatrices2"):
+        distMatrices2.append(calcDistMatrix(
+            bags2[i], method=dist_method, gamma=gamma))
         dist_sum += np.sum(distMatrices2[i])
         dist_num += distMatrices2[i].shape[0] * distMatrices2[i].shape[1]
 
-    if delta is None and delta_method =='global':
+    if delta is None and delta_method == 'global':
         delta = dist_sum / dist_num
 
-
-    diagNorm1 = np.zeros(N) # Contains normalization for each diagonal element
-    weightMatrices1 = [] # List of weight matrices
-    for i in range(N):
-        if delta is None and delta_method =='local':
+    diagNorm1 = np.zeros(N)  # Contains normalization for each diagonal element
+    weightMatrices1 = []  # List of weight matrices
+    for i in tqdm(range(N), desc="weightMatrices1"):
+        if delta is None and delta_method == 'local':
             delta = np.mean(distMatrices1[i])
             weightMatrices1.append((distMatrices1[i] < delta).astype(np.uint8))
             delta = None
         else:
             weightMatrices1.append((distMatrices1[i] < delta).astype(np.uint8))
-        diagNorm1[i] = calcKernelEntry(bags1[i], bags1[i], weightMatrices1[i], weightMatrices1[i], gamma=gamma)
+        diagNorm1[i] = calcKernelEntry(
+            bags1[i], bags1[i], weightMatrices1[i], weightMatrices1[i], gamma=gamma)
 
-
-    diagNorm2 = np.zeros(M) # Contains normalization for each diagonal element
-    weightMatrices2 = [] # List of weight matrices
-    for i in range(M):
-        if delta is None and delta_method =='local':
+    diagNorm2 = np.zeros(M)  # Contains normalization for each diagonal element
+    weightMatrices2 = []  # List of weight matrices
+    for i in tqdm(range(M), desc="weightMatrices2"):
+        if delta is None and delta_method == 'local':
             delta = np.mean(distMatrices2[i])
             weightMatrices2.append((distMatrices2[i] < delta).astype(np.uint8))
             delta = None
         else:
             weightMatrices2.append((distMatrices2[i] < delta).astype(np.uint8))
-        diagNorm2[i] = calcKernelEntry(bags2[i], bags2[i], weightMatrices2[i], weightMatrices2[i], gamma=gamma)
-
+        diagNorm2[i] = calcKernelEntry(
+            bags2[i], bags2[i], weightMatrices2[i], weightMatrices2[i], gamma=gamma)
 
     if n_threads == -1:
         n_threads = cpu_count()
 
-    threadQ = Queue.Queue()
-
-    for i in range(n_threads):
-        worker = Thread(target=calcKernelEntry_threading, args=(kernel, threadQ,))
-        worker.setDaemon(True)
-        worker.start()
-
+    threadQ = queue.Queue()
 
     T = N*M
-    k = 0
-    for i in range(N):
-        for j in range(M):
+    with tqdm(total=T, disable=not progressBar, desc="Tasks completed") as pbar:
+        for i in range(n_threads):
+            worker = Thread(target=calcKernelEntry_threading,
+                            args=(kernel, threadQ,))
+            worker.daemon = True
+            worker.start()
 
-            threadQ.put((i, j, bags1[i], bags2[j], weightMatrices1[i], weightMatrices2[j], gamma))
+        k = 0
+        for i in range(N):
+            for j in range(M):
 
-            if ((k%(ceil(T/100)) == 0 or k == T-1) and progressBar):
-                sys.stdout.write('\r')
-                sys.stdout.write("[%-50s] %d%%" % ('='*int(float(k+1)/T*50), int(float(k+1)/T*100)))
-                sys.stdout.flush()
-            k += 1
-    if progressBar:
-        sys.stdout.write('\n')
+                threadQ.put(
+                    (i, j, bags1[i], bags2[j], weightMatrices1[i], weightMatrices2[j], gamma))
 
-    threadQ.join()
+                if ((k % (ceil(T/100)) == 0 or k == T-1) and progressBar):
+                    sys.stdout.write('\r')
+                    sys.stdout.write(
+                        "[%-50s] %d%%" % ('='*int(float(k+1)/T*50), int(float(k+1)/T*100)))
+                    sys.stdout.flush()
+                k += 1
+        if progressBar:
+            sys.stdout.write('\n')
 
+        completed = 0
+        while completed < T:
+            new_completed = T - threadQ.unfinished_tasks
+            pbar.update(new_completed - completed)
+            completed = new_completed
+            sleep(5)
+
+
+        threadQ.join()
 
     diagNorm1 = np.tile(diagNorm1, [M, 1]).transpose()
     diagNorm2 = np.tile(diagNorm2, [N, 1])
 
     kernel /= np.sqrt(diagNorm1 * diagNorm2)
 
-
     return kernel
-
-
 
 
 def normalize_data(bags, method='zeroMeanOneVar'):
@@ -382,7 +390,7 @@ def normalize_data(bags, method='zeroMeanOneVar'):
 
     instance_features = bags[0]
 
-    for i in range(1,len(bags)):
+    for i in range(1, len(bags)):
         instance_features = np.concatenate((instance_features, bags[i]))
 
     if method == 'zeroMeanOneVar':
@@ -391,20 +399,16 @@ def normalize_data(bags, method='zeroMeanOneVar'):
         min_max_scaler = preprocessing.MinMaxScaler()
         instance_features = min_max_scaler.fit_transform(instance_features)
 
-        print(np.max(instance_features[:,0]), np.min(instance_features[:,0]))
-
-
+        print(np.max(instance_features[:, 0]), np.min(instance_features[:, 0]))
 
     start = 0
     end = 0
     for i in range(len(bags)):
         end += bags[i].shape[0]
-        bags[i] = instance_features[start:end]
+        bags[i] = instance_features[start:end] # type: ignore
         start = end
 
     return bags
-
-
 
 
 def estimate_gamma(bags, method='med_dist'):
@@ -419,7 +423,7 @@ def estimate_gamma(bags, method='med_dist'):
 
     instance_features = bags[0]
 
-    for i in range(1,len(bags)):
+    for i in range(1, len(bags)):
         instance_features = np.concatenate((instance_features, bags[i]))
 
     if method == 'num_feature':
@@ -427,14 +431,13 @@ def estimate_gamma(bags, method='med_dist'):
 
     if method == 'med_dist':
         n = instance_features.shape[0]
-        if n > 10000: # If there are too many instances we can only take a subset
+        if n > 10000:  # If there are too many instances we can only take a subset
             seed(1)
-            seq = sample(range(0,n), 10000)
+            seq = sample(range(0, n), 10000)
             instance_features = instance_features[seq]
 
         return 1/(np.median(pdist(instance_features))**2)
 
 
-
 if __name__ == '__main__':
-     print()
+    print()

@@ -42,17 +42,18 @@ import fnmatch
 from random import shuffle
 
 import numpy as np
-import h5py as h5
+import h5py
 
-from scipy import interp
-from sklearn import svm, metrics, cross_validation
+from numpy import interp
+from sklearn import svm, metrics
+from sklearn.model_selection import KFold
 from sklearn.metrics import precision_recall_curve, roc_curve, accuracy_score, auc, precision_score, recall_score, f1_score
 
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from miGraph import buildKernel, buildKernel_threading, normalize_data, estimate_gamma
+from .miGraph import buildKernel, buildKernel_threading, normalize_data, estimate_gamma
 
 
 
@@ -71,7 +72,7 @@ def miGraphCV(bags, bagsLabels, gamma, delta=None, delta_method='global', dist_m
                          'local' will determine a separate delta for each bag while 'global' uses the same delta for all.
     :param C: The SVM regularizer.
     :param k: The k-fold parameter.
-    
+
     :return gamma: The weight parameter to detemine when a given distance is regarded an edge. If None, the mean of
                   all distances is used.
     :return delta: The weight parameter to detemine when a given distance is regarded an edge. If None, the mean of
@@ -106,15 +107,15 @@ def miGraphCV(bags, bagsLabels, gamma, delta=None, delta_method='global', dist_m
     precRec = []
     
     # shuffle bags and labels for arbitrary order of labels
-    shuffIndices = range(len(bags))
+    shuffIndices = list(range(len(bags)))
     shuffle(shuffIndices)
 
     bags = [bags[i] for i in shuffIndices]
     bagsLabels = [bagsLabels[i] for i in shuffIndices]
 
     # get indices for training and test set for cross validation
-    CVindex = cross_validation.KFold(len(bags), k)
-    for trainIndices, testIndices in CVindex:
+    CVindex = KFold(n_splits=k, shuffle=False)
+    for trainIndices, testIndices in CVindex.split(bags):
 
         # seperating data to test- and training-set
         X_train = [bags[i] for i in trainIndices]
@@ -213,7 +214,7 @@ def saveCV(filename, gamma, delta, delta_method, C, y_gt, y_pred, y_predProb, tp
         filename += '.hdf5'
 
     
-    f = h5.File(filename, 'w')
+    f = h5py.File(filename, 'w')
         
     f.attrs.create('gamma', np.array([gamma]))
     if delta is None:
@@ -293,7 +294,7 @@ def loadCV(filename):
     filename = os.path.expanduser(filename)
 
 
-    f = h5.File(filename, 'r')
+    f = h5py.File(filename, 'r')
     gamma = f.attrs.get('gamma')[0]
     delta = f.attrs.get('delta')[0]
     if delta == -1:
