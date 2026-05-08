@@ -7,3 +7,4 @@ Zhi-Hua Zhou, Yu-Yin Sun, and Yu-Feng Li. 2009. Multi-instance learning by treat
 This fork contains modified code from [https://github.com/manuSrep/miGraphPy](https://github.com/manuSrep/miGraphPy) repository. Modifications include:
 - adding tqdm progress bars
 - adding new distance methods and support for new data formats of `X`
+- moving files to separate folder, add [pyproject.toml](pyproject.toml) for easier package building using pip
