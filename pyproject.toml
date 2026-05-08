@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "miGraph"
+version = "1"
+dependencies = [
+    "scipy",
+    "numpy",
+    "sklearn"
+]
+description = "" 
+readme = "README.md"
+
+[project.urls]
+Repository = "https://github.com/manuSrep/miGraphPy.git"
